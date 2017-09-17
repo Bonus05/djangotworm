@@ -1,85 +1,218 @@
-from django.db.models.query import QuerySet
+import asyncio
+from time import sleep, time
+from django.db.models.query import QuerySet, ModelIterable
 from django.db.models.sql.query import Query
-from twango.db import connections
-from twango.decorators import call_in_thread
+from django.db.models.aggregates import Count
+from django.utils import six
+from django.db import transaction
+
+from twango.decorators import make_asynclike
+from twango.exceptions import FetchNotCalled
+from twango.common import AsyncIterator
+
 from twisted.internet import threads
+from twisted.internet.defer import Deferred
+
+
+
+
+class FetchNotCalled(Exception):
+    pass
 
 
 class TwistedQuery(Query):
-    def twisted_compiler(self, using=None, connection=None):
-        """
-        !!! NOT YET USED
-        """
-        if using is None and connection is None:
-            raise ValueError("Need either using or connection")
-        if using:
-            connection = connections[using]
-        else:
-            connection = connections[connection.alias]
-        # Check that the compiler will be able to execute the query
-        for alias, aggregate in self.aggregate_select.items():
-            connection.ops.check_aggregate_support(aggregate)
+    defered = False
 
-        return connection.ops.compiler(self.compiler)(self, connection, using)
+    async def get_count(self, using):
+        """
+        Performs a COUNT() query using the current filter constraints.
+        """
+        obj = self.clone()
+        obj.add_annotation(Count('*'), alias='__count', is_summary=True)
+        y = await obj.get_aggregation(using, ['__count'])
+        number = y['__count']
+        if number is None:
+            number = 0
+        return number
+
+    @make_asynclike
+    def get_aggregation(self, using, added_aggregate_names):
+        return super(TwistedQuery, self).get_aggregation(using, added_aggregate_names)
+
+    def clone(self, klass=None, memo=None, **kwargs):
+        clone = super(TwistedQuery, self).clone(klass=klass, memo=memo, **kwargs)
+        clone.defered = self.defered
+        return clone
 
 
 class TwistedQuerySet(QuerySet):
+    defered = False
     def __init__(self, model=None, query=None, using=None, hints=None):
         query = query or TwistedQuery(model)
         super(TwistedQuerySet, self).__init__(model=model, query=query, using=using, hints=hints)
-        self.success_callback = None
-        self.error_callback = None
 
-    def twist(self):
+    async def fetch(self):
+        await self._fetch_all()
+        return self
+
+    def __check_fetch__(self):
+        if not self.defered and self._result_cache is None:
+            raise FetchNotCalled('You must call .fetch() at first.')
+
+    def __len__(self):
         """
-        !!! NOT YET USED
-        Use twisted database api to run the query and return the raw results in a deferred
+        You must call .fetch() method before calling __len__
+        Some functions like objects.get() making a dbquery by asking len(qs).
         """
-        query = self.query
-        assert(isinstance(query, Query))
-        compiler = query.get_compiler(self.db)
-        sql, params = compiler.as_nested_sql()
-        if not sql:
-            return
-        connection = connections[self.db]
-        return connection.runQuery(sql, params)
+        self.__check_fetch__()
+        return super(TwistedQuerySet, self).__len__()
 
-    def _super_threaded(self, name, *args, **kwargs):
-        success_callback = kwargs.pop('success_callback', self.success_callback)
-        error_callback = kwargs.pop('error_callback', self.error_callback)
+    def __iter__(self):
+        self.__check_fetch__()
+        # self._fetch_all()
+        return iter(self._result_cache)
 
-        @call_in_thread(success_callback, error_callback)
-        def function():
-            return getattr(super(TwistedQuerySet, self), name)(*args, **kwargs)
-        return function()
+    async def __aiter__(self):
+        d = self._fetch_all()
+        if isinstance(d, Deferred):
+            await d
+        return AsyncIterator(self._result_cache)
 
-    def _clone(self, klass=None, setup=False, **kwargs):
-        self.success_callback = kwargs.pop('success_callback', self.success_callback)
-        self.error_callback = kwargs.pop('error_callback', self.error_callback)
-        return super(TwistedQuerySet, self)._clone(**kwargs)
+    def __bool__(self):
+        """
+        You must call .fetch() method before calling __bool__
+        """
+        self.__check_fetch__()
+        return  super(TwistedQuerySet, self).__bool__()
+    #
+    # def iterator(self):
+    #     return super(TwistedQuerySet, self).iterator()
 
-    def all(self, **kwargs):
-        # not working in django 1.11+
-        # go to TwistedManager
-        return self._super_threaded('all', **kwargs)
+    @make_asynclike
+    def aggregate(self, *args, **kwargs):
+        return super(TwistedQuerySet, self).aggregate(*args, **kwargs)
 
-    def none(self, **kwargs):
-        return self._super_threaded('none', **kwargs)
+    async def count(self):
+        """
+        Performs a SELECT COUNT() and returns the number of records as an
+        integer.
 
-    def count(self, **kwargs):
-        return self._super_threaded('count', **kwargs)
+        If the QuerySet is already fully cached this simply returns the length
+        of the cached results set to avoid multiple SELECT COUNT(*) calls.
+        """
+        if self._result_cache is not None:
+            return len(self._result_cache)
+        return await self.query.get_count(using=self.db)
 
-    def get(self, *args, **kwargs):
-        return self._super_threaded('get', *args, **kwargs)
+    async def get(self, *args, **kwargs):
+        """
+        Performs the query and returns a single object matching the given
+        keyword arguments.
+        """
+        clone = self.filter(*args, **kwargs)
+        if self.query.can_filter() and not self.query.distinct_fields:
+            clone = clone.order_by()
+        await clone.fetch()
+        num = len(clone)
+        if num == 1:
+            return clone._result_cache[0]
+        if not num:
+            raise self.model.DoesNotExist(
+                "%s matching query does not exist." %
+                self.model._meta.object_name
+            )
+        raise self.model.MultipleObjectsReturned(
+            "get() returned more than one %s -- it returned %s!" %
+            (self.model._meta.object_name, num)
+        )
 
-    def get_or_create(self, **kwargs):
-        return self._super_threaded('get_or_create', **kwargs)
+    @make_asynclike
+    def create(self, **kwargs):
+        return super(TwistedQuerySet, self).create(**kwargs)
 
-    def delete(self, **kwargs):
-        return self._super_threaded('delete', **kwargs)
+    @make_asynclike
+    def bulk_create(self, objs, batch_size=None):
+        return super(TwistedQuerySet, self).bulk_create(objs, batch_size=batch_size)
 
-    def update(self, values, **kwargs):
-        return self._super_threaded('update', values, **kwargs)
+    async def get_or_create(self, defaults=None, **kwargs):
+        """
+        Looks up an object with the given kwargs, creating one if necessary.
+        Returns a tuple of (object, created), where created is a boolean
+        specifying whether an object was created.
+        """
+        lookup, params = self._extract_model_params(defaults, **kwargs)
+        # The get() needs to be targeted at the write database in order
+        # to avoid potential transaction consistency problems.
+        self._for_write = True
+        try:
+            result = await self.get(**lookup)
+            return result, False
+        except self.model.DoesNotExist:
+            return await self._create_object_from_params(lookup, params)
 
-    def in_bulk(self, id_list, **kwargs):
-        return self._super_threaded('in_bulk', id_list, **kwargs)
+    async def update_or_create(self, defaults=None, **kwargs):
+        """
+        Looks up an object with the given kwargs, updating one with defaults
+        if it exists, otherwise creates a new one.
+        Returns a tuple (object, created), where created is a boolean
+        specifying whether an object was created.
+        """
+        defaults = defaults or {}
+        lookup, params = self._extract_model_params(defaults, **kwargs)
+        self._for_write = True
+        with transaction.atomic(using=self.db):
+            try:
+                obj = await self.select_for_update().get(**lookup)
+            except self.model.DoesNotExist:
+                obj, created = await self._create_object_from_params(lookup, params)
+                if created:
+                    return obj, created
+            for k, v in six.iteritems(defaults):
+                setattr(obj, k, v() if callable(v) else v)
+            await self.objsave(obj, using=self.db)
+        return obj, False
+
+    @make_asynclike
+    def _create_object_from_params(self, lookup, params):
+        return super(TwistedQuerySet, self)._create_object_from_params(lookup, params)
+
+    async def objsave(self, obj, *args, **kwargs):
+        return await self._objsave(obj, *args, **kwargs)
+
+    @make_asynclike
+    def _objsave(self, obj, *args, **kwargs):
+        return obj.save(*args, **kwargs)
+
+    @make_asynclike
+    def delete(self):
+        return super(TwistedQuerySet, self).delete()
+    delete.alters_data = True
+    delete.queryset_only = True
+
+    @make_asynclike
+    def update(self, **kwargs):
+        return super(TwistedQuerySet, self).update(**kwargs)
+    update.alters_data = True
+
+    @make_asynclike
+    def exists(self):
+        return super(TwistedQuerySet, self).exists()
+
+    ##################################################
+    # PUBLIC METHODS THAT RETURN A QUERYSET SUBCLASS #
+    ##################################################
+
+    @make_asynclike
+    def _insert(self, objs, fields, return_id=False, raw=False, using=None):
+        return super(TwistedQuerySet, self)._insert(objs, fields, return_id=False, raw=False, using=None)
+    _insert.alters_data = True
+    _insert.queryset_only = False
+
+    def _clone(self, **kwargs):
+        clone = super(TwistedQuerySet, self)._clone()
+        clone.defered = self.defered
+        return clone
+
+    @make_asynclike
+    def _fetch_all(self):
+        return super(TwistedQuerySet, self)._fetch_all()
