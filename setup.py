@@ -48,7 +48,7 @@ def readme():
 
 setup(
     name='djangotworm',
-    version='0.2.0',
+    version='0.3.0',
     description="""Django QuerySets that can be Twisted aware. Adds several methods on a custom manager and queryset that return deferreds/coroutine/future.""",
     long_description=readme(),
     url='https://github.com/Bonus05/djangotworm',
