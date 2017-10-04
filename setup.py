@@ -39,7 +39,7 @@ for dirpath, dirnames, filenames in os.walk(package_dir):
     elif filenames:
         data_files.append([dirpath, [os.path.join(dirpath, f) for f in filenames]])
 
-version = __import__('djangotworm').get_version()
+version = __import__('djanwgotworm').get_version()
 
 
 def readme():
@@ -48,7 +48,7 @@ def readme():
 
 setup(
     name='djangotworm',
-    version='0.3.0',
+    version='0.4.0',
     description="""Django QuerySets that can be Twisted aware. Adds several methods on a custom manager and queryset that return deferreds/coroutine/future.""",
     long_description=readme(),
     url='https://github.com/Bonus05/djangotworm',

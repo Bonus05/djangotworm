@@ -1,23 +1,14 @@
-import asyncio
-from time import sleep, time
-from django.db.models.query import QuerySet, ModelIterable
+from django.db.models.query import QuerySet
 from django.db.models.sql.query import Query
 from django.db.models.aggregates import Count
 from django.utils import six
 from django.db import transaction
 
-from twango.decorators import make_asynclike
-from twango.exceptions import FetchNotCalled
-from twango.common import AsyncIterator
-
-from twisted.internet import threads
 from twisted.internet.defer import Deferred
 
-
-
-
-class FetchNotCalled(Exception):
-    pass
+from .decorators import make_asynclike
+from .exceptions import FetchNotCalled
+from .common import AsyncIterator
 
 
 class TwistedQuery(Query):
