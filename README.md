@@ -1,7 +1,17 @@
-twango = Django ORM + Twisted + asyncio - Blocking
+Django ORM + Twisted + asyncio - blocking
 ----------------------------------------
 This is a library that contains a custom queryset and a custom manager that adds introspection to use
 the twisted database api instead of django. It returns deferred (Future or coroutine) instead of just hitting the database.
+
+since v0.2:
+-----------
+- mostly rewrited;
+- renamed package as "twisted-django-orm";
+- python 3.5.2+ now is required;
+- used asyncio to avoid "callback hell";
+- you still can obtain result as defered;
+- there are some untested cases;
+ 
 
 To install:
 -----------
