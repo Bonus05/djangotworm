@@ -2,8 +2,12 @@ from django.db.models.query import QuerySet
 from django.db.models.sql.query import Query
 from django.db.models.aggregates import Count
 from django.utils import six
-from django.db import transaction
-
+# from django.db import transaction
+from django.db import (
+    DJANGO_VERSION_PICKLE_KEY, IntegrityError, connections, router,
+    transaction,
+)
+import sys
 from twisted.internet.defer import Deferred
 
 from .decorators import make_asynclike
@@ -165,7 +169,18 @@ class TwistedQuerySet(QuerySet):
 
     @make_asynclike
     def _create_object_from_params(self, lookup, params):
-        return super(TwistedQuerySet, self)._create_object_from_params(lookup, params)
+        try:
+            with transaction.atomic(using=self.db):
+                params = {k: v() if callable(v) else v for k, v in params.items()}
+                obj = self.create(**params)
+            return obj, True
+        except IntegrityError:
+            exc_info = sys.exc_info()
+            try:
+                return QuerySet.get(self, **lookup), False
+            except self.model.DoesNotExist:
+                pass
+            six.reraise(*exc_info)
 
     async def objsave(self, obj, *args, **kwargs):
         return await self._objsave(obj, *args, **kwargs)
