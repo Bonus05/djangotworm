@@ -3,6 +3,18 @@ Django ORM + Twisted + asyncio - blocking
 This is a library that contains a custom queryset and a custom manager that adds introspection to use
 the twisted database api instead of django. It returns deferred (Future or coroutine) instead of just hitting the database.
 
+since v0.5:
+-----------
+- model instance save method replacing on the fly, now u can:
+```python
+await obj.save()
+```
+
+since v0.3-0.4:
+-----------
+- get_or_create fix
+
+
 since v0.2:
 -----------
 - mostly rewrited;

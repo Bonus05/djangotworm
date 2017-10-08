@@ -15,7 +15,8 @@ from functools import wraps
 def make_asynclike(method):
     @wraps(method)
     def wrapped(self, *args, **kwargs):
-        if not self.defered:
+        print(args, kwargs)
+        if not getattr(self, 'defered', False):
             def task_done(result):
                 self.defered = False
                 return result
@@ -25,5 +26,24 @@ def make_asynclike(method):
             result.addCallback(task_done)
         else:
             result = method(self, *args, **kwargs)
+        return result
+    return wrapped
+
+
+def make_asynclike_instance(method):
+    #use for instance method's of some class
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        print(args, kwargs)
+        if not getattr(self, 'defered', False):
+            def task_done(result):
+                self.defered = False
+                return result
+            self.defered = True
+            result = threads.deferToThread(method, *args, **kwargs)
+            # result.addErrback(error)
+            result.addCallback(task_done)
+        else:
+            result = method(*args, **kwargs)
         return result
     return wrapped

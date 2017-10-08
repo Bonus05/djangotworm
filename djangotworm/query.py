@@ -1,18 +1,18 @@
+import sys
+
 from django.db.models.query import QuerySet
 from django.db.models.sql.query import Query
 from django.db.models.aggregates import Count
 from django.utils import six
-# from django.db import transaction
 from django.db import (
     DJANGO_VERSION_PICKLE_KEY, IntegrityError, connections, router,
     transaction,
 )
-import sys
 from twisted.internet.defer import Deferred
 
 from .decorators import make_asynclike
 from .exceptions import FetchNotCalled
-from .common import AsyncIterator
+from .common import AsyncIterator, TwModelIterable
 
 
 class TwistedQuery(Query):
@@ -45,6 +45,7 @@ class TwistedQuerySet(QuerySet):
     def __init__(self, model=None, query=None, using=None, hints=None):
         query = query or TwistedQuery(model)
         super(TwistedQuerySet, self).__init__(model=model, query=query, using=using, hints=hints)
+        self._iterable_class = TwModelIterable
 
     async def fetch(self):
         await self._fetch_all()
@@ -207,12 +208,12 @@ class TwistedQuerySet(QuerySet):
     ##################################################
     # PUBLIC METHODS THAT RETURN A QUERYSET SUBCLASS #
     ##################################################
-
-    @make_asynclike
-    def _insert(self, objs, fields, return_id=False, raw=False, using=None):
-        return super(TwistedQuerySet, self)._insert(objs, fields, return_id=False, raw=False, using=None)
-    _insert.alters_data = True
-    _insert.queryset_only = False
+    #
+    # @make_asynclike
+    # def _insert(self, objs, fields, return_id=False, raw=False, using=None):
+    #     return super(TwistedQuerySet, self)._insert(objs, fields, return_id=False, raw=False, using=None)
+    # _insert.alters_data = True
+    # _insert.queryset_only = False
 
     def _clone(self, **kwargs):
         clone = super(TwistedQuerySet, self)._clone()
