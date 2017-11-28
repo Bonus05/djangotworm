@@ -40,11 +40,11 @@ class TwistedQuery(Query):
         return clone
 
 
-class TwistedQuerySet(QuerySet):
+class TwistedQuerySetBase:
     defered = False
     def __init__(self, model=None, query=None, using=None, hints=None):
         query = query or TwistedQuery(model)
-        super(TwistedQuerySet, self).__init__(model=model, query=query, using=using, hints=hints)
+        super(TwistedQuerySetBase, self).__init__(model=model, query=query, using=using, hints=hints)
         self._iterable_class = TwModelIterable
 
     async def fetch(self):
@@ -61,7 +61,7 @@ class TwistedQuerySet(QuerySet):
         Some functions like objects.get() making a dbquery by asking len(qs).
         """
         self.__check_fetch__()
-        return super(TwistedQuerySet, self).__len__()
+        return super(TwistedQuerySetBase, self).__len__()
 
     def __iter__(self):
         self.__check_fetch__()
@@ -79,14 +79,14 @@ class TwistedQuerySet(QuerySet):
         You must call .fetch() method before calling __bool__
         """
         self.__check_fetch__()
-        return  super(TwistedQuerySet, self).__bool__()
+        return  super(TwistedQuerySetBase, self).__bool__()
     #
     # def iterator(self):
-    #     return super(TwistedQuerySet, self).iterator()
+    #     return super(TwistedQuerySetBase, self).iterator()
 
     @make_asynclike
     def aggregate(self, *args, **kwargs):
-        return super(TwistedQuerySet, self).aggregate(*args, **kwargs)
+        return super(TwistedQuerySetBase, self).aggregate(*args, **kwargs)
 
     async def count(self):
         """
@@ -124,11 +124,11 @@ class TwistedQuerySet(QuerySet):
 
     @make_asynclike
     def create(self, **kwargs):
-        return super(TwistedQuerySet, self).create(**kwargs)
+        return super(TwistedQuerySetBase, self).create(**kwargs)
 
     @make_asynclike
     def bulk_create(self, objs, batch_size=None):
-        return super(TwistedQuerySet, self).bulk_create(objs, batch_size=batch_size)
+        return super(TwistedQuerySetBase, self).bulk_create(objs, batch_size=batch_size)
 
     async def get_or_create(self, defaults=None, **kwargs):
         """
@@ -192,18 +192,18 @@ class TwistedQuerySet(QuerySet):
 
     @make_asynclike
     def delete(self):
-        return super(TwistedQuerySet, self).delete()
+        return super(TwistedQuerySetBase, self).delete()
     delete.alters_data = True
     delete.queryset_only = True
 
     @make_asynclike
     def update(self, **kwargs):
-        return super(TwistedQuerySet, self).update(**kwargs)
+        return super(TwistedQuerySetBase, self).update(**kwargs)
     update.alters_data = True
 
     @make_asynclike
     def exists(self):
-        return super(TwistedQuerySet, self).exists()
+        return super(TwistedQuerySetBase, self).exists()
 
     ##################################################
     # PUBLIC METHODS THAT RETURN A QUERYSET SUBCLASS #
@@ -211,15 +211,30 @@ class TwistedQuerySet(QuerySet):
     #
     # @make_asynclike
     # def _insert(self, objs, fields, return_id=False, raw=False, using=None):
-    #     return super(TwistedQuerySet, self)._insert(objs, fields, return_id=False, raw=False, using=None)
+    #     return super(TwistedQuerySetBase, self)._insert(objs, fields, return_id=False, raw=False, using=None)
     # _insert.alters_data = True
     # _insert.queryset_only = False
 
     def _clone(self, **kwargs):
-        clone = super(TwistedQuerySet, self)._clone()
+        clone = super(TwistedQuerySetBase, self)._clone()
         clone.defered = self.defered
         return clone
 
     @make_asynclike
     def _fetch_all(self):
-        return super(TwistedQuerySet, self)._fetch_all()
+        return super(TwistedQuerySetBase, self)._fetch_all()
+
+
+class TwistedQuerySet(TwistedQuerySetBase, QuerySet):
+    pass
+
+
+try:
+    # https://github.com/aykut/django-bulk-update
+    from django_bulk_update.query import BulkUpdateQuerySet
+    class BulkTwistedQuerySet(TwistedQuerySetBase, BulkUpdateQuerySet):
+        @make_asynclike
+        def bulk_update(self, *args, **kwargs):
+            return super(BulkTwistedQuerySet, self).bulk_update(*args, **kwargs)
+except ImportError:
+    pass

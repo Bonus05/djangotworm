@@ -48,13 +48,13 @@ def readme():
 
 setup(
     name='djangotworm',
-    version='0.5.0',
+    version='0.6.0',
     description="""Django QuerySets that can be Twisted aware. Adds several methods on a custom manager and queryset that return deferreds/coroutine/future.""",
     long_description=readme(),
     url='https://github.com/Bonus05/djangotworm',
     author='Alexander Burdeinyi',
     author_email='bonus05@gmail.com',
-    download_url='https://github.com/Bonus05/djangotworm/raw/master/djangotworm-0.5.0.tar.gz',
+    download_url='https://github.com/Bonus05/djangotworm/raw/master/djangotworm-0.6.0.tar.gz',
     license='https://github.com/Bonus05/djangotworm/blob/master/MIT-LICENSE.txt',
     platform=['Any'],
     packages=packages,
